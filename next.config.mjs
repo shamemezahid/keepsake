@@ -1,16 +1,12 @@
 /** @type {import('next').NextConfig} */
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+
 const nextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
+  output: 'export',
+  images: { unoptimized: true },
+  trailingSlash: true,
+  basePath,
+  assetPrefix: basePath,
 };
 
 export default nextConfig;

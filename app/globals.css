@@ -1,26 +1,77 @@
 @import "tailwindcss";
 
+/* ── Design Tokens ──────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #F7F6F3;
+  --text: #3A3A3C;
+  --text-subtle: #6E6E73;
+  --text-faint: #A1A1A6;
+  --hover: rgba(0, 0, 0, 0.045);
+  --surface: #FCFBF9;
+  --surface-border: rgba(0, 0, 0, 0.08);
+  --focus-ring: #8E8E93;
+  color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --bg: #1C1C1E;
+  --text: #D8D8DA;
+  --text-subtle: #9A9AA0;
+  --text-faint: #636368;
+  --hover: rgba(255, 255, 255, 0.06);
+  --surface: #252527;
+  --surface-border: rgba(255, 255, 255, 0.1);
+  --focus-ring: #8E8E93;
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Colors are used directly via CSS var() in inline styles and component styles */
+
+/* ── Base ───────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ── Focus Ring ─────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Remove focus ring on non-keyboard focus */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Reduced Motion ─────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ── Sonner Toast Overrides ─────────────────────────────────── */
+[data-sonner-toaster] [data-sonner-toast] {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--surface-border) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-button] {
+  background: var(--hover) !important;
+  color: var(--text) !important;
 }
