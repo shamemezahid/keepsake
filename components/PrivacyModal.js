@@ -1,103 +1,55 @@
-'use client';
-import * as Dialog from '@radix-ui/react-dialog';
-import { X } from 'lucide-react';
+"use client";
 
-export default function PrivacyModal({ open, onClose }) {
+import React from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { X } from "lucide-react";
+
+export function PrivacyModal({ open, onOpenChange }) {
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.3)',
-            zIndex: 50,
-            animation: 'fadeIn 150ms ease',
-          }}
-        />
-        <Dialog.Content
-          aria-describedby="privacy-desc"
-          style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: 'var(--surface)',
-            border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
-            boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
-            width: '100%',
-            maxWidth: '440px',
-            padding: '24px',
-            zIndex: 51,
-            animation: 'modalIn 150ms ease',
-            outline: 'none',
-          }}
-        >
-          <style>{`
-            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-            @keyframes modalIn { from { opacity: 0; transform: translate(-50%, -50%) scale(0.97); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
-          `}</style>
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <Dialog.Title style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text)' }}>
+        <Dialog.Overlay className="modal-overlay fixed inset-0 bg-[#1C1C1E]/35 dark:bg-[#1C1C1E]/70 z-50" />
+        <Dialog.Content className="modal-content fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-[440px] bg-surface border border-surface-border rounded-2xl shadow-xl p-6 z-50 text-text focus:outline-none">
+          <div className="flex items-center justify-between mb-4">
+            <Dialog.Title className="text-[18px] font-semibold text-text">
               Privacy note
             </Dialog.Title>
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              style={{
-                width: '28px',
-                height: '28px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                borderRadius: '6px',
-                color: 'var(--text-faint)',
-              }}
-            >
-              <X size={16} strokeWidth={1.5} />
-            </button>
+            <Dialog.Close asChild>
+              <button
+                type="button"
+                aria-label="Close"
+                className="size-8 rounded-lg flex items-center justify-center hover:bg-hover text-text-subtle hover:text-text cursor-pointer transition-colors"
+              >
+                <X strokeWidth={1.5} className="size-4" />
+              </button>
+            </Dialog.Close>
           </div>
 
-          <div
-            id="privacy-desc"
-            style={{ fontSize: '14px', color: 'var(--text-subtle)', lineHeight: '1.6', display: 'flex', flexDirection: 'column', gap: '12px' }}
-          >
-            <p style={{ margin: 0 }}>
+          <div className="space-y-3 text-[14px] leading-relaxed text-text-subtle">
+            <p>
               Your bookmarks stay on this device. They are saved in your browser&apos;s localStorage and are never sent to a server. This app has no backend, no accounts, and no analytics.
             </p>
-            <p style={{ margin: 0 }}>
+            <p>
               That also means they won&apos;t follow you to another browser or device, and clearing your browser&apos;s site data will erase them. Use Export JSON to keep a backup.
             </p>
-            <p style={{ margin: 0 }}>
+            <p>
               One exception: to show each site&apos;s icon, your browser requests it from DuckDuckGo&apos;s icon service, which receives the domain of each saved site and your IP address. It does not receive page titles, descriptions, or anything else. If an icon can&apos;t be loaded, a generic globe is shown.
             </p>
-            <p style={{ margin: 0 }}>
+            <p>
               The font is bundled with the app and loaded from this site.
             </p>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-            <button
-              onClick={onClose}
-              style={{
-                padding: '8px 16px',
-                fontSize: '14px',
-                fontWeight: 500,
-                background: 'var(--text)',
-                color: 'var(--bg)',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Close
-            </button>
+          <div className="mt-6 flex justify-end">
+            <Dialog.Close asChild>
+              <button
+                type="button"
+                className="btn-primary px-4 py-2 rounded-lg text-[14px] font-medium hover:opacity-90 cursor-pointer transition-opacity"
+                style={{ color: "var(--surface)", backgroundColor: "var(--text)" }}
+              >
+                Close
+              </button>
+            </Dialog.Close>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

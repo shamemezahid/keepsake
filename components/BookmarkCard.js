@@ -1,22 +1,25 @@
-'use client';
-import { useState } from 'react';
-import { Globe } from 'lucide-react';
-import { getFaviconUrl, getHostname } from '@/lib/url';
-import { GripVertical, Ellipsis } from 'lucide-react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+"use client";
 
-export default function BookmarkCard({
+import React, { useState } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Globe, GripVertical, Ellipsis, Pencil, Trash2 } from "lucide-react";
+import { getHostname, getDisplayHostname } from "@/lib/url";
+import { useStore } from "@/hooks/useStore";
+
+export function BookmarkCard({
   bookmark,
   containerId,
   onEdit,
   onDelete,
-  isDragging = false,
   isOverlay = false,
+  appearance: propAppearance,
 }) {
-  const [faviconError, setFaviconError] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const store = useStore();
+  const rawAppearance = propAppearance || store?.appearance || "relaxed";
+  const appearance = rawAppearance === "extended" ? "relaxed" : rawAppearance;
+  const [hasIconError, setHasIconError] = useState(false);
 
   const {
     attributes,
@@ -24,274 +27,136 @@ export default function BookmarkCard({
     setNodeRef,
     transform,
     transition,
-    isDragging: isSortableDragging,
+    isDragging,
   } = useSortable({
     id: `b_${bookmark.id}`,
-    data: { type: 'bookmark', bookmarkId: bookmark.id, containerId },
+    data: {
+      type: "bookmark",
+      bookmark,
+      containerId,
+    },
+    disabled: isOverlay,
   });
 
-  const style = isOverlay ? {} : {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isSortableDragging ? 0.4 : 1,
-  };
+  const style = isOverlay
+    ? {}
+    : {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.25 : 1,
+    };
 
   const hostname = getHostname(bookmark.url);
-  const faviconUrl = getFaviconUrl(bookmark.url);
-  const subtitle = bookmark.description?.trim() || hostname;
+  const subtitle = bookmark.description ? bookmark.description : getDisplayHostname(bookmark.url);
 
   return (
     <div
-      ref={isOverlay ? undefined : setNodeRef}
+      ref={setNodeRef}
       style={style}
-      className="group relative rounded-lg"
+      className={`relative group rounded-2xl px-4 py-3 transition-colors touch-no-swap ${isOverlay ? "bg-hover shadow-md cursor-grabbing" : "hover:bg-hover"
+        }`}
     >
       <div
-        style={{
-          padding: '10px 12px',
-          borderRadius: '8px',
-          background: isOverlay ? 'var(--hover)' : 'transparent',
-          transition: 'background 150ms',
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '10px',
-        }}
-        className="hover:[background:var(--hover)]"
+        className={`flex items-center ${
+          appearance === "icon-only" ? "gap-2 py-1" : "py-2 gap-4"
+        }`}
       >
-        {/* Drag handle / favicon */}
+        {/* Favicon / Drag handle activator */}
         <button
-          {...(isOverlay ? {} : listeners)}
-          {...(isOverlay ? {} : attributes)}
+          type="button"
           aria-label={`Drag to reorder ${bookmark.title}`}
-          style={{
-            width: '20px',
-            height: '20px',
-            minWidth: '20px',
-            border: 'none',
-            background: 'transparent',
-            cursor: isSortableDragging ? 'grabbing' : 'grab',
-            padding: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '3px',
-            touchAction: 'none',
-            position: 'relative',
-            zIndex: 10,
-            flexShrink: 0,
-            marginTop: '1px',
-          }}
-          className="favicon-btn"
+          {...attributes}
+          {...listeners}
+          className="relative z-10 size-5 flex-shrink-0 flex items-center justify-center touch-none cursor-grab active:cursor-grabbing rounded-md favicon-slot mt-0.5"
         >
-          {/* Favicon (hidden on hover, shown by default) */}
+          {/* Favicon or fallback globe */}
           <span
-            className="favicon-img"
-            style={{
-              position: 'absolute',
-              transition: 'opacity 120ms',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+            className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 favicon-img ${isDragging ? "opacity-0" : "group-hover:opacity-0 group-focus-within:opacity-0"
+              }`}
           >
-            {faviconError ? (
-              <Globe size={16} strokeWidth={1} style={{ color: 'var(--text-faint)' }} />
+            {hasIconError || !hostname ? (
+              <Globe strokeWidth={1} className="size-5 text-text-faint" />
             ) : (
               <img
-                src={faviconUrl}
+                src={`https://icons.duckduckgo.com/ip3/${hostname}.ico`}
                 alt=""
-                width={16}
-                height={16}
-                style={{ borderRadius: '2px', display: 'block' }}
-                referrerPolicy="no-referrer"
                 loading="lazy"
-                onError={() => setFaviconError(true)}
+                referrerPolicy="no-referrer"
+                onError={() => setHasIconError(true)}
+                className="size-8 rounded-2xl object-contain p-3 min-w-12 min-h-12"
               />
             )}
           </span>
-          {/* Grip (shown on hover) */}
+
+          {/* GripVertical handle on hover/drag */}
           <span
-            className="grip-icon"
-            style={{
-              position: 'absolute',
-              opacity: 0,
-              transition: 'opacity 120ms',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+            className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 grip-handle text-text-faint ${isDragging ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+              }`}
           >
-            <GripVertical size={16} strokeWidth={1.5} style={{ color: 'var(--text-faint)' }} />
+            <GripVertical strokeWidth={1.5} className="size-4" />
           </span>
         </button>
 
-        {/* Text content */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Content area: Title + Subtitle */}
+        <div className={appearance === "icon-only" ? "min-w-0" : "flex-1 min-w-0 pr-1"}>
           <a
             href={bookmark.url}
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              fontSize: '16px',
-              fontWeight: 600,
-              color: 'var(--text)',
-              textDecoration: 'none',
-              display: 'block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            className="stretched-link"
+            title={bookmark.title}
+            className="block font-semibold text-[16px] text-text truncate after:absolute after:inset-0 after:content-[''] after:z-0 outline-none"
           >
-            {bookmark.title}
+            {appearance === "icon-only" ? (
+              <span className="sr-only">{bookmark.title}</span>
+            ) : (
+              bookmark.title
+            )}
           </a>
-          <p
-            style={{
-              margin: 0,
-              fontSize: '14px',
-              color: 'var(--text-subtle)',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}
-          >
-            {subtitle}
-          </p>
+          {appearance === "relaxed" && (
+            <p className="text-[14px] text-text-subtle line-clamp-2 leading-snug">
+              {subtitle}
+            </p>
+          )}
         </div>
 
-        {/* Card menu */}
-        <div style={{ position: 'relative', zIndex: 10, flexShrink: 0, marginTop: '1px' }}>
-          <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenu.Trigger asChild>
-              <button
-                aria-label="Bookmark options"
-                style={{
-                  width: '24px',
-                  height: '24px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  border: 'none',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  borderRadius: '4px',
-                  color: 'var(--text-faint)',
-                  opacity: 0,
-                  transition: 'opacity 120ms',
-                }}
-                className="card-menu-btn"
-              >
-                <Ellipsis size={16} strokeWidth={1.5} />
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                align="end"
-                sideOffset={4}
-                style={{
-                  background: 'var(--surface)',
-                  border: '1px solid var(--surface-border)',
-                  borderRadius: '8px',
-                  padding: '4px',
-                  minWidth: '140px',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
-                  zIndex: 100,
-                }}
-              >
-                <DropdownMenu.Item
-                  onSelect={onEdit}
-                  style={menuItemStyle}
-                  className="menu-item"
+        {/* Action menu button */}
+        {!isOverlay && (
+          <div className="relative z-10 flex-shrink-0">
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  type="button"
+                  aria-label={`Options for ${bookmark.title}`}
+                  className="size-7 rounded-lg flex items-center justify-center text-text-faint hover:text-text hover:bg-hover opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 touch-visible transition-opacity cursor-pointer"
                 >
-                  Edit
-                </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  onSelect={onDelete}
-                  style={menuItemStyle}
-                  className="menu-item"
+                  <Ellipsis strokeWidth={1.5} className="size-4" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  align="end"
+                  sideOffset={4}
+                  className="min-w-[130px] bg-surface border border-surface-border rounded-xl shadow-lg p-1 text-[14px] text-text z-50 focus:outline-none"
                 >
-                  Delete
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        </div>
-      </div>
-
-      <style>{`
-        .group:hover .favicon-img,
-        .group:focus-within .favicon-img {
-          opacity: 0;
-        }
-        .group:hover .grip-icon,
-        .group:focus-within .grip-icon {
-          opacity: 1;
-        }
-        .group:hover .card-menu-btn,
-        .group:focus-within .card-menu-btn {
-          opacity: 1 !important;
-        }
-        @media (hover: none) {
-          .favicon-img { opacity: 1 !important; }
-          .grip-icon { opacity: 0 !important; }
-          .card-menu-btn { opacity: 1 !important; }
-        }
-        .stretched-link::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          z-index: 1;
-          border-radius: 8px;
-        }
-        .menu-item {
-          padding: 7px 10px;
-          border-radius: 5px;
-          cursor: pointer;
-          font-size: 14px;
-          color: var(--text);
-          outline: none;
-          user-select: none;
-        }
-        .menu-item:hover,
-        .menu-item[data-highlighted] {
-          background: var(--hover);
-        }
-      `}</style>
-    </div>
-  );
-}
-
-// Overlay version (no sortable hook, just visual)
-export function BookmarkCardOverlay({ bookmark }) {
-  const [faviconError, setFaviconError] = useState(false);
-  const hostname = getHostname(bookmark.url);
-  const faviconUrl = getFaviconUrl(bookmark.url);
-  const subtitle = bookmark.description?.trim() || hostname;
-
-  return (
-    <div
-      style={{
-        padding: '10px 12px',
-        borderRadius: '8px',
-        background: 'var(--hover)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '10px',
-        cursor: 'grabbing',
-        boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-      }}
-    >
-      <div style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
-        <GripVertical size={16} strokeWidth={1.5} style={{ color: 'var(--text-faint)' }} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {bookmark.title}
-        </div>
-        <div style={{ fontSize: '14px', color: 'var(--text-subtle)', marginTop: '1px' }}>
-          {subtitle}
-        </div>
+                  <DropdownMenu.Item
+                    onSelect={() => onEdit?.(bookmark, containerId)}
+                    className="px-3 py-2 rounded-lg hover:bg-hover focus:bg-hover outline-none cursor-pointer text-text flex items-center gap-2.5 transition-colors"
+                  >
+                    <Pencil strokeWidth={1.5} className="size-4 shrink-0 text-text-subtle" />
+                    <span>Edit</span>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onSelect={() => onDelete?.(containerId, bookmark.id)}
+                    className="px-3 py-2 rounded-lg hover:bg-hover focus:bg-hover outline-none cursor-pointer text-text flex items-center gap-2.5 transition-colors"
+                  >
+                    <Trash2 strokeWidth={1.5} className="size-4 shrink-0 text-red-700 dark:text-red-400" />
+                    <span>Delete</span>
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </div>
+        )}
       </div>
     </div>
   );

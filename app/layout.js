@@ -1,70 +1,70 @@
-import { Newsreader } from 'next/font/google';
-import { Toaster } from 'sonner';
-import './globals.css';
-import { APP_NAME, STORAGE_KEY } from '@/lib/config';
+import { Newsreader } from "next/font/google";
+import { Toaster } from "sonner";
+import { APP_NAME, STORAGE_KEY } from "@/lib/config";
+import "./globals.css";
 
 const newsreader = Newsreader({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-newsreader',
-  display: 'swap',
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-newsreader",
+  fallback: ["Georgia", "Cambria", "Times New Roman", "Times", "serif"],
+  display: "swap",
 });
 
 export const metadata = {
   title: APP_NAME,
-  description: 'Your personal bookmark board. Save and organize your favorite links.',
+  description: "A minimal, personal bookmark board",
 };
 
-// Inline script to set theme before paint (prevents flash)
-const themeScript = `
-(function() {
-  try {
-    var raw = localStorage.getItem('${STORAGE_KEY}');
-    var theme = 'system';
-    if (raw) {
-      var data = JSON.parse(raw);
-      if (data && data.settings && data.settings.theme) {
-        theme = data.settings.theme;
-      }
-    }
-    var isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  } catch(e) {}
-})();
-`;
-
 export default function RootLayout({ children }) {
+  const themeInitScript = `
+    (function() {
+      try {
+        var raw = localStorage.getItem("${STORAGE_KEY}");
+        var theme = "system";
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          if (parsed && parsed.settings && parsed.settings.theme) {
+            theme = parsed.settings.theme;
+          }
+        }
+        var isDark = false;
+        if (theme === "dark") {
+          isDark = true;
+        } else if (theme === "light") {
+          isDark = false;
+        } else {
+          isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        }
+        if (isDark) {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      } catch (e) {}
+    })();
+  `;
+
   return (
-    <html
-      lang="en"
-      suppressHydrationWarning
-      className={newsreader.variable}
-    >
+    <html lang="en" suppressHydrationWarning className={newsreader.variable}>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script
+          dangerouslySetInnerHTML={{ __html: themeInitScript }}
+        />
       </head>
-      <body
-        style={{
-          fontFamily: "var(--font-newsreader), 'Georgia', 'Times New Roman', serif",
-          backgroundColor: 'var(--bg)',
-          color: 'var(--text)',
-          minHeight: '100vh',
-        }}
-      >
+      <body className="min-h-screen bg-bg text-text antialiased">
         {children}
         <Toaster
           position="bottom-center"
           toastOptions={{
             style: {
-              background: 'var(--surface)',
-              color: 'var(--text)',
-              border: '1px solid var(--surface-border)',
-              fontFamily: "var(--font-newsreader), 'Georgia', 'Times New Roman', serif",
+              background: "var(--surface)",
+              color: "var(--text)",
+              border: "1px solid var(--surface-border)",
+              fontFamily: "var(--font-newsreader), Georgia, Cambria, 'Times New Roman', Times, serif",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
             },
+            className: "keepsake-toast",
           }}
         />
       </body>

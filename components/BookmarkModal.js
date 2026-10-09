@@ -1,245 +1,255 @@
-'use client';
-import { useState, useEffect, useRef } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
-import { X } from 'lucide-react';
-import { normalizeUrl, normalizeForDupe } from '@/lib/url';
-import { generateId } from '@/lib/storage';
+"use client";
 
-export default function BookmarkModal({
+import React, { useState, useEffect, useRef } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { X } from "lucide-react";
+import { normalizeUrl, findDuplicate } from "@/lib/url";
+import { useStore } from "@/hooks/useStore";
+
+export function BookmarkModal({
   open,
-  onClose,
-  onSave,
-  containers,
-  defaultContainerId,
-  editBookmark,
-  editContainerId,
-  findDuplicate,
+  onOpenChange,
+  initialData = null, // if editing: { bookmark, containerId }
+  defaultContainerId = null,
 }) {
-  const isEdit = !!editBookmark;
+  const { containers, addBookmark, updateBookmark, addContainer } = useStore();
 
-  const [url, setUrl] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [containerId, setContainerId] = useState('');
-  const [urlError, setUrlError] = useState('');
-  const [titleError, setTitleError] = useState('');
+  const isEditing = Boolean(initialData?.bookmark);
+
+  const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [selectedContainerId, setSelectedContainerId] = useState("");
+  const [urlError, setUrlError] = useState("");
+  const [titleError, setTitleError] = useState("");
 
   const urlInputRef = useRef(null);
 
+  // Sync state when modal opens or initialData changes
   useEffect(() => {
     if (open) {
-      if (isEdit) {
-        setUrl(editBookmark.url || '');
-        setTitle(editBookmark.title || '');
-        setDescription(editBookmark.description || '');
-        setContainerId(editContainerId || containers[0]?.id || '');
+      setUrlError("");
+      setTitleError("");
+
+      if (isEditing) {
+        setUrl(initialData.bookmark.url || "");
+        setTitle(initialData.bookmark.title || "");
+        setDescription(initialData.bookmark.description || "");
+        setSelectedContainerId(initialData.containerId);
       } else {
-        setUrl('');
-        setTitle('');
-        setDescription('');
-        setContainerId(defaultContainerId || containers[0]?.id || '');
-      }
-      setUrlError('');
-      setTitleError('');
-    }
-  }, [open, isEdit, editBookmark, editContainerId, defaultContainerId, containers]);
+        setUrl("");
+        setTitle("");
+        setDescription("");
 
-  function handleSubmit(e) {
-    e?.preventDefault();
-    let hasError = false;
+        const containerIdToUse =
+          defaultContainerId || (containers.length > 0 ? containers[0].id : "");
+        setSelectedContainerId(containerIdToUse);
 
-    // Validate title
-    if (!title.trim()) {
-      setTitleError('Title is required.');
-      hasError = true;
-    } else {
-      setTitleError('');
-    }
-
-    // Validate and normalize URL
-    const { url: normalized, error: urlErr } = normalizeUrl(url);
-    if (urlErr || !normalized) {
-      setUrlError(urlErr || 'Please enter a valid URL.');
-      hasError = true;
-    } else {
-      setUrlError('');
-      // Check for duplicates
-      const dupe = findDuplicate(normalized, isEdit ? editBookmark.id : null);
-      if (dupe) {
-        setUrlError(`Already saved in "${dupe.container.title}".`);
-        hasError = true;
+        // Autofocus URL field on add
+        setTimeout(() => {
+          urlInputRef.current?.focus();
+        }, 50);
       }
     }
+  }, [open, isEditing, initialData, defaultContainerId, containers]);
 
-    if (hasError) return;
+  const handleSubmit = (e) => {
+    if (e) e.preventDefault();
+    setUrlError("");
+    setTitleError("");
 
-    const targetContainerId = containerId || containers[0]?.id;
+    // 1. Validate & normalize URL
+    const norm = normalizeUrl(url);
+    if (!norm.valid) {
+      setUrlError(norm.error || "Please enter a valid URL");
+      return;
+    }
 
-    if (isEdit) {
-      onSave({
-        type: 'edit',
-        bookmarkId: editBookmark.id,
-        fromContainerId: editContainerId,
-        toContainerId: targetContainerId,
-        updates: {
-          url: normalizeUrl(url).url,
-          title: title.trim(),
-          description: description.trim(),
-        },
+    // 2. Duplicate detection
+    const excludeId = isEditing ? initialData.bookmark.id : null;
+    const dup = findDuplicate(containers, norm.url, excludeId);
+    if (dup) {
+      setUrlError(`Already saved in ${dup.containerTitle}`);
+      return;
+    }
+
+    // 3. Validate title
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      setTitleError("Title cannot be blank");
+      return;
+    }
+
+    // 4. Container validation / fallback
+    let targetContainerId = selectedContainerId;
+    if (!targetContainerId || !containers.some((c) => c.id === targetContainerId)) {
+      if (containers.length > 0) {
+        targetContainerId = containers[0].id;
+      } else {
+        const created = addContainer("Container");
+        targetContainerId = created.id;
+      }
+    }
+
+    // 5. Commit
+    if (isEditing) {
+      updateBookmark(initialData.containerId, targetContainerId, {
+        ...initialData.bookmark,
+        url: norm.url,
+        title: trimmedTitle,
+        description: description.trim(),
       });
     } else {
-      onSave({
-        type: 'add',
-        containerId: targetContainerId,
-        bookmark: {
-          id: generateId(),
-          url: normalizeUrl(url).url,
-          title: title.trim(),
-          description: description.trim(),
-          createdAt: new Date().toISOString(),
-        },
+      addBookmark(targetContainerId, {
+        url: norm.url,
+        title: trimmedTitle,
+        description: description.trim(),
       });
     }
-    onClose();
-  }
 
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    onOpenChange(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
       handleSubmit();
     }
-  }
+  };
 
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.3)',
-            zIndex: 50,
-            animation: 'fadeIn 150ms ease',
-          }}
-        />
-        <Dialog.Content
-          aria-describedby={undefined}
-          style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: 'var(--surface)',
-            border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
-            boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
-            width: '100%',
-            maxWidth: '440px',
-            padding: '24px',
-            zIndex: 51,
-            animation: 'modalIn 150ms ease',
-            outline: 'none',
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') onClose();
-          }}
-        >
-          <style>{`
-            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-            @keyframes modalIn { from { opacity: 0; transform: translate(-50%, -50%) scale(0.97); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
-          `}</style>
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-            <Dialog.Title style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text)' }}>
-              {isEdit ? 'Edit bookmark' : 'Add bookmark'}
+        <Dialog.Overlay className="modal-overlay fixed inset-0 bg-[#1C1C1E]/35 dark:bg-[#1C1C1E]/70 z-50" />
+        <Dialog.Content className="modal-content fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-[440px] bg-surface border border-surface-border rounded-2xl shadow-xl p-6 z-50 text-text focus:outline-none">
+          <div className="flex items-center justify-between mb-4">
+            <Dialog.Title className="text-[18px] font-semibold text-text">
+              {isEditing ? "Edit bookmark" : "Add bookmark"}
             </Dialog.Title>
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              style={{
-                width: '28px',
-                height: '28px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                borderRadius: '6px',
-                color: 'var(--text-faint)',
-              }}
-            >
-              <X size={16} strokeWidth={1.5} />
-            </button>
+            <Dialog.Close asChild>
+              <button
+                type="button"
+                aria-label="Close"
+                className="size-8 rounded-lg flex items-center justify-center hover:bg-hover text-text-subtle hover:text-text cursor-pointer transition-colors"
+              >
+                <X strokeWidth={1.5} className="size-4" />
+              </button>
+            </Dialog.Close>
           </div>
 
-          <form onSubmit={handleSubmit} noValidate>
-            <Field label="URL" required error={urlError}>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* URL field */}
+            <div>
+              <label
+                htmlFor="bookmark-url"
+                className="block text-[13px] font-medium text-text-subtle mb-1"
+              >
+                URL
+              </label>
               <input
                 ref={urlInputRef}
-                id="bm-url"
-                type="url"
-                autoFocus={!isEdit}
+                id="bookmark-url"
+                type="text"
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  if (urlError) setUrlError("");
+                }}
                 onKeyDown={handleKeyDown}
                 placeholder="https://example.com"
-                style={inputStyle(!!urlError)}
+                className={`w-full bg-bg border ${urlError ? "border-focus-ring" : "border-surface-border"
+                  } text-text rounded-lg px-3 py-2 text-[14px] focus-visible:outline-2 focus-visible:outline-focus-ring`}
               />
-            </Field>
+              {urlError && (
+                <p className="text-[13px] text-text-subtle mt-1">{urlError}</p>
+              )}
+            </div>
 
-            <Field label="Title" required error={titleError}>
+            {/* Title field */}
+            <div>
+              <label
+                htmlFor="bookmark-title"
+                className="block text-[13px] font-medium text-text-subtle mb-1"
+              >
+                Title
+              </label>
               <input
-                id="bm-title"
+                id="bookmark-title"
                 type="text"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (titleError) setTitleError("");
+                }}
                 onKeyDown={handleKeyDown}
-                placeholder="My favorite site"
-                style={inputStyle(!!titleError)}
+                placeholder="Page title"
+                className={`w-full bg-bg border ${titleError ? "border-focus-ring" : "border-surface-border"
+                  } text-text rounded-lg px-3 py-2 text-[14px] focus-visible:outline-2 focus-visible:outline-focus-ring`}
               />
-            </Field>
+              {titleError && (
+                <p className="text-[13px] text-text-subtle mt-1">{titleError}</p>
+              )}
+            </div>
 
-            <Field label="Description" error="">
+            {/* Description field */}
+            <div>
+              <label
+                htmlFor="bookmark-description"
+                className="block text-[13px] font-medium text-text-subtle mb-1"
+              >
+                Description (optional)
+              </label>
               <input
-                id="bm-desc"
+                id="bookmark-description"
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Optional description"
-                style={inputStyle(false)}
+                placeholder="Optional notes or summary"
+                className="w-full bg-bg border border-surface-border text-text rounded-lg px-3 py-2 text-[14px] focus-visible:outline-2 focus-visible:outline-focus-ring"
               />
-            </Field>
+            </div>
 
-            <Field label="Container" error="">
+            {/* Container select */}
+            <div>
+              <label
+                htmlFor="bookmark-container"
+                className="block text-[13px] font-medium text-text-subtle mb-1"
+              >
+                Container
+              </label>
               <select
-                id="bm-container"
-                value={containerId}
-                onChange={(e) => setContainerId(e.target.value)}
-                style={{
-                  ...inputStyle(false),
-                  cursor: 'pointer',
-                }}
+                id="bookmark-container"
+                value={selectedContainerId}
+                onChange={(e) => setSelectedContainerId(e.target.value)}
+                className="w-full bg-bg border border-surface-border text-text rounded-lg px-3 py-2 text-[14px] focus-visible:outline-2 focus-visible:outline-focus-ring cursor-pointer"
               >
                 {containers.map((c) => (
-                  <option key={c.id} value={c.id}>{c.title}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.title || "Untitled"}
+                  </option>
                 ))}
+                {containers.length === 0 && (
+                  <option value="default">Container (new)</option>
+                )}
               </select>
-            </Field>
+            </div>
 
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
+            {/* Action buttons */}
+            <div className="pt-2 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={onClose}
-                style={secondaryBtnStyle}
+                onClick={() => onOpenChange(false)}
+                className="px-3 py-2 rounded-lg text-[14px] text-text-subtle hover:bg-hover cursor-pointer transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                style={primaryBtnStyle}
+                className="btn-primary px-4 py-2 rounded-lg text-[14px] font-medium hover:opacity-90 cursor-pointer transition-opacity"
+                style={{ color: "var(--surface)", backgroundColor: "var(--text)" }}
               >
-                {isEdit ? 'Save' : 'Add'}
+                {isEditing ? "Save" : "Add"}
               </button>
             </div>
           </form>
@@ -248,65 +258,3 @@ export default function BookmarkModal({
     </Dialog.Root>
   );
 }
-
-function Field({ label, required, error, children }) {
-  return (
-    <div style={{ marginBottom: '16px' }}>
-      <label
-        htmlFor={children?.props?.id}
-        style={{
-          display: 'block',
-          fontSize: '13px',
-          fontWeight: 500,
-          color: 'var(--text-subtle)',
-          marginBottom: '6px',
-        }}
-      >
-        {label}{required && <span style={{ color: 'var(--text-faint)', marginLeft: '2px' }}>*</span>}
-      </label>
-      {children}
-      {error && (
-        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#b45309' }}>{error}</p>
-      )}
-    </div>
-  );
-}
-
-function inputStyle(hasError) {
-  return {
-    width: '100%',
-    padding: '8px 10px',
-    fontSize: '14px',
-    background: 'var(--bg)',
-    color: 'var(--text)',
-    border: `1px solid ${hasError ? '#b45309' : 'var(--surface-border)'}`,
-    borderRadius: '6px',
-    outline: 'none',
-    fontFamily: 'inherit',
-    boxSizing: 'border-box',
-  };
-}
-
-const primaryBtnStyle = {
-  padding: '8px 16px',
-  fontSize: '14px',
-  fontWeight: 500,
-  background: 'var(--text)',
-  color: 'var(--bg)',
-  border: 'none',
-  borderRadius: '6px',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const secondaryBtnStyle = {
-  padding: '8px 16px',
-  fontSize: '14px',
-  fontWeight: 500,
-  background: 'transparent',
-  color: 'var(--text-subtle)',
-  border: '1px solid var(--surface-border)',
-  borderRadius: '6px',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};

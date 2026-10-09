@@ -1,6 +1,5 @@
 @import "tailwindcss";
 
-/* ── Design Tokens ──────────────────────────────────────────── */
 :root {
   --bg: #F7F6F3;
   --text: #3A3A3C;
@@ -25,53 +24,136 @@
   color-scheme: dark;
 }
 
-/* Colors are used directly via CSS var() in inline styles and component styles */
-
-/* ── Base ───────────────────────────────────────────────────── */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+@theme inline {
+  --color-bg: var(--bg);
+  --color-text: var(--text);
+  --color-text-subtle: var(--text-subtle);
+  --color-text-faint: var(--text-faint);
+  --color-hover: var(--hover);
+  --color-surface: var(--surface);
+  --color-surface-border: var(--surface-border);
+  --color-focus-ring: var(--focus-ring);
 }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-  background-color: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-}
+@layer base {
+  *, *::before, *::after {
+    font-family: var(--font-newsreader), Georgia, Cambria, "Times New Roman", Times, serif;
+    box-sizing: border-box;
+  }
 
-/* ── Focus Ring ─────────────────────────────────────────────── */
-:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
+  html, body {
+    background-color: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+  }
 
-/* Remove focus ring on non-keyboard focus */
-:focus:not(:focus-visible) {
-  outline: none;
-}
+  button, input, select, textarea {
+    font-family: inherit;
+    color: inherit;
+  }
 
-/* ── Reduced Motion ─────────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
   }
 }
 
-/* ── Sonner Toast Overrides ─────────────────────────────────── */
-[data-sonner-toaster] [data-sonner-toast] {
-  background: var(--surface) !important;
-  color: var(--text) !important;
-  border-color: var(--surface-border) !important;
+/* Primary action buttons */
+.btn-primary {
+  background-color: var(--text) !important;
+  color: var(--surface) !important;
 }
 
-[data-sonner-toaster] [data-sonner-toast] [data-button] {
-  background: var(--hover) !important;
-  color: var(--text) !important;
+/* Modal open & close animations for Radix Dialog */
+@keyframes modalOverlayShow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
+
+@keyframes modalOverlayHide {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modalContentShow {
+  from {
+    opacity: 0;
+    scale: 0.95;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes modalContentHide {
+  from {
+    opacity: 1;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 0.95;
+  }
+}
+
+.modal-overlay[data-state="open"] {
+  animation: modalOverlayShow 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modal-overlay[data-state="closed"] {
+  animation: modalOverlayHide 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modal-content[data-state="open"] {
+  animation: modalContentShow 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modal-content[data-state="closed"] {
+  animation: modalContentHide 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .modal-overlay[data-state="open"],
+  .modal-overlay[data-state="closed"],
+  .modal-content[data-state="open"],
+  .modal-content[data-state="closed"] {
+    animation: none !important;
+  }
+}
+
+/* Touch device adaptations (@media (hover: none)) */
+@media (hover: none) {
+  .touch-visible {
+    opacity: 1 !important;
+  }
+  .touch-no-swap .favicon-img {
+    opacity: 1 !important;
+  }
+  .touch-no-swap .grip-handle {
+    display: none !important;
+  }
+}
+

@@ -1,71 +1,163 @@
-'use client';
-import { useReducer, useEffect, useRef, useCallback } from 'react';
-import { STORAGE_KEY } from '@/lib/config';
-import { loadData, scheduleSave, flushSave, generateId, createDefaultData } from '@/lib/storage';
-import { normalizeForDupe } from '@/lib/url';
-import { toast } from 'sonner';
+"use client";
 
-function reducer(state, action) {
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
+import { toast } from "sonner";
+import { STORAGE_KEY, APP_NAME } from "@/lib/config";
+import {
+  generateId,
+  getDefaultData,
+  loadFromStorage,
+  writeToStorage,
+  validateData,
+} from "@/lib/storage";
+
+const StoreContext = createContext(null);
+
+function applyDomTheme(theme) {
+  if (typeof window === "undefined") return;
+  let isDark = false;
+  if (theme === "dark") {
+    isDark = true;
+  } else if (theme === "light") {
+    isDark = false;
+  } else {
+    isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  if (isDark) {
+    document.documentElement.classList.add("dark");
+  } else {
+    document.documentElement.classList.remove("dark");
+  }
+}
+
+export function storeReducer(state, action) {
   switch (action.type) {
-    case 'LOAD':
-      return action.data;
+    case "INITIALIZE": {
+      return {
+        ...action.payload,
+        isLoaded: true,
+      };
+    }
 
-    case 'SET_THEME':
-      return { ...state, settings: { ...state.settings, theme: action.theme } };
+    case "REPLACE_STATE": {
+      return {
+        ...action.payload,
+        isLoaded: true,
+      };
+    }
 
-    // ── CONTAINERS ──────────────────────────────────────────────────────────
-    case 'ADD_CONTAINER': {
+    case "SET_CONTAINERS": {
+      return {
+        ...state,
+        containers: action.payload,
+      };
+    }
+
+    case "ADD_CONTAINER": {
       const newContainer = {
-        id: action.id || generateId(),
-        title: action.title || 'Container',
+        id: generateId(),
+        title: action.payload?.title || "Container",
         collapsed: false,
         bookmarks: [],
       };
-      return { ...state, containers: [...state.containers, newContainer] };
-    }
-
-    case 'UPDATE_CONTAINER': {
       return {
         ...state,
-        containers: state.containers.map(c =>
-          c.id === action.id ? { ...c, ...action.updates } : c
-        ),
+        containers: [...state.containers, newContainer],
       };
     }
 
-    case 'DELETE_CONTAINER': {
+    case "RENAME_CONTAINER": {
+      const { id, title } = action.payload;
+      const trimmed = typeof title === "string" ? title.trim() : "";
       return {
         ...state,
-        containers: state.containers.filter(c => c.id !== action.id),
+        containers: state.containers.map((c) => {
+          if (c.id !== id) return c;
+          return { ...c, title: trimmed };
+        }),
       };
     }
 
-    case 'REORDER_CONTAINERS': {
-      return { ...state, containers: action.containers };
-    }
-
-    // ── BOOKMARKS ───────────────────────────────────────────────────────────
-    case 'ADD_BOOKMARK': {
+    case "TOGGLE_COLLAPSE": {
+      const { id } = action.payload;
       return {
         ...state,
-        containers: state.containers.map(c =>
-          c.id === action.containerId
-            ? { ...c, bookmarks: [...c.bookmarks, action.bookmark] }
-            : c
-        ),
+        containers: state.containers.map((c) => {
+          if (c.id !== id) return c;
+          return { ...c, collapsed: !c.collapsed };
+        }),
       };
     }
 
-    case 'UPDATE_BOOKMARK': {
+    case "DELETE_CONTAINER": {
+      const { id } = action.payload;
       return {
         ...state,
-        containers: state.containers.map(c => {
-          if (c.id === action.containerId) {
+        containers: state.containers.filter((c) => c.id !== id),
+      };
+    }
+
+    case "RESTORE_CONTAINER": {
+      const { container, index } = action.payload;
+      const nextContainers = [...state.containers];
+      const targetIndex = Math.min(Math.max(index, 0), nextContainers.length);
+      nextContainers.splice(targetIndex, 0, container);
+      return {
+        ...state,
+        containers: nextContainers,
+      };
+    }
+
+    case "ADD_BOOKMARK": {
+      const { containerId, bookmark } = action.payload;
+      return {
+        ...state,
+        containers: state.containers.map((c) => {
+          if (c.id !== containerId) return c;
+          return {
+            ...c,
+            bookmarks: [...c.bookmarks, bookmark],
+          };
+        }),
+      };
+    }
+
+    case "UPDATE_BOOKMARK": {
+      const { oldContainerId, newContainerId, bookmark } = action.payload;
+      if (oldContainerId === newContainerId) {
+        return {
+          ...state,
+          containers: state.containers.map((c) => {
+            if (c.id !== oldContainerId) return c;
             return {
               ...c,
-              bookmarks: c.bookmarks.map(b =>
-                b.id === action.bookmarkId ? { ...b, ...action.updates } : b
-              ),
+              bookmarks: c.bookmarks.map((b) => (b.id === bookmark.id ? bookmark : b)),
+            };
+          }),
+        };
+      }
+
+      // Moved to a different container
+      return {
+        ...state,
+        containers: state.containers.map((c) => {
+          if (c.id === oldContainerId) {
+            return {
+              ...c,
+              bookmarks: c.bookmarks.filter((b) => b.id !== bookmark.id),
+            };
+          }
+          if (c.id === newContainerId) {
+            return {
+              ...c,
+              bookmarks: [...c.bookmarks, bookmark],
             };
           }
           return c;
@@ -73,50 +165,119 @@ function reducer(state, action) {
       };
     }
 
-    case 'MOVE_BOOKMARK': {
-      // Remove from source, insert at target
-      const { bookmarkId, fromContainerId, toContainerId, toIndex } = action;
-      let bookmark = null;
-
-      const containers = state.containers.map(c => {
-        if (c.id === fromContainerId) {
-          const idx = c.bookmarks.findIndex(b => b.id === bookmarkId);
-          if (idx !== -1) {
-            bookmark = c.bookmarks[idx];
-            return { ...c, bookmarks: c.bookmarks.filter(b => b.id !== bookmarkId) };
-          }
-        }
-        return c;
-      });
-
-      if (!bookmark) return state;
-
-      const finalContainers = containers.map(c => {
-        if (c.id === toContainerId) {
-          const newBookmarks = [...c.bookmarks];
-          const insertAt = toIndex !== undefined ? toIndex : newBookmarks.length;
-          newBookmarks.splice(insertAt, 0, bookmark);
-          return { ...c, bookmarks: newBookmarks };
-        }
-        return c;
-      });
-
-      return { ...state, containers: finalContainers };
-    }
-
-    case 'DELETE_BOOKMARK': {
+    case "DELETE_BOOKMARK": {
+      const { containerId, bookmarkId } = action.payload;
       return {
         ...state,
-        containers: state.containers.map(c =>
-          c.id === action.containerId
-            ? { ...c, bookmarks: c.bookmarks.filter(b => b.id !== action.bookmarkId) }
-            : c
-        ),
+        containers: state.containers.map((c) => {
+          if (c.id !== containerId) return c;
+          return {
+            ...c,
+            bookmarks: c.bookmarks.filter((b) => b.id !== bookmarkId),
+          };
+        }),
       };
     }
 
-    case 'SET_CONTAINERS': {
-      return { ...state, containers: action.containers };
+    case "RESTORE_BOOKMARK": {
+      const { bookmark, containerId, index } = action.payload;
+      const targetContainerExists = state.containers.some((c) => c.id === containerId);
+
+      if (targetContainerExists) {
+        return {
+          ...state,
+          containers: state.containers.map((c) => {
+            if (c.id !== containerId) return c;
+            const nextBookmarks = [...c.bookmarks];
+            const targetIdx = Math.min(Math.max(index, 0), nextBookmarks.length);
+            nextBookmarks.splice(targetIdx, 0, bookmark);
+            return { ...c, bookmarks: nextBookmarks };
+          }),
+        };
+      }
+
+      // Fall back to first container if original container was deleted
+      if (state.containers.length > 0) {
+        return {
+          ...state,
+          containers: state.containers.map((c, i) => {
+            if (i !== 0) return c;
+            return {
+              ...c,
+              bookmarks: [...c.bookmarks, bookmark],
+            };
+          }),
+        };
+      }
+
+      // If zero containers exist, create one to hold restored bookmark
+      return {
+        ...state,
+        containers: [
+          {
+            id: generateId(),
+            title: "Container",
+            collapsed: false,
+            bookmarks: [bookmark],
+          },
+        ],
+      };
+    }
+
+    case "SET_THEME": {
+      return {
+        ...state,
+        settings: {
+          ...state.settings,
+          theme: action.payload,
+        },
+      };
+    }
+
+    case "SET_APP_NAME": {
+      const trimmed = (action.payload || "").trim();
+      return {
+        ...state,
+        settings: {
+          ...state.settings,
+          appName: trimmed || APP_NAME,
+        },
+      };
+    }
+
+    case "SET_APPEARANCE": {
+      const appearance = action.payload;
+      const normalized = appearance === "extended" ? "relaxed" : appearance;
+      const valid = ["icon-only", "compact", "relaxed"].includes(normalized)
+        ? normalized
+        : "relaxed";
+      return {
+        ...state,
+        settings: {
+          ...state.settings,
+          appearance: valid,
+        },
+      };
+    }
+
+    case "SET_USE_DIVIDERS": {
+      return {
+        ...state,
+        settings: {
+          ...state.settings,
+          useDividers: Boolean(action.payload),
+        },
+      };
+    }
+
+    case "TOGGLE_USE_DIVIDERS": {
+      return {
+        ...state,
+        settings: {
+          ...state.settings,
+          useDividers: !state.settings?.useDividers,
+        },
+      };
     }
 
     default:
@@ -124,180 +285,285 @@ function reducer(state, action) {
   }
 }
 
-export function useStore() {
-  const [state, dispatch] = useReducer(reducer, null);
+export function StoreProvider({ children }) {
+  const [state, dispatch] = useReducer(storeReducer, {
+    ...getDefaultData(),
+    isLoaded: false,
+  });
+
   const stateRef = useRef(state);
-  const isLoadedRef = useRef(false);
+  stateRef.current = state;
 
-  // Keep ref in sync
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
+  const saveTimerRef = useRef(null);
+  const skipNextSaveRef = useRef(false);
 
-  // Load on mount
-  useEffect(() => {
-    const { data, error } = loadData();
-    if (error) {
-      toast.error(error);
+  // Synchronous flush helper
+  const flushStorage = useCallback(() => {
+    if (!stateRef.current.isLoaded) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
     }
-    dispatch({ type: 'LOAD', data });
-    isLoadedRef.current = true;
+    const cleanData = {
+      version: stateRef.current.version,
+      settings: stateRef.current.settings,
+      containers: stateRef.current.containers,
+    };
+    const res = writeToStorage(cleanData);
+    if (res && res.error) {
+      toast.error("Failed to save changes to localStorage");
+    }
   }, []);
 
-  // Persist on state change (debounced)
+  // Initial load after mount
   useEffect(() => {
-    if (!isLoadedRef.current || !state) return;
-    scheduleSave(state);
-  }, [state]);
+    const { data, isCorrupt, error } = loadFromStorage();
 
-  // Flush on page hide
+    if (isCorrupt) {
+      toast.error("Stored bookmarks data was corrupt. A backup was saved.");
+    } else if (error) {
+      toast.error("Failed to read bookmarks from localStorage");
+    }
+
+    skipNextSaveRef.current = true;
+    dispatch({ type: "INITIALIZE", payload: data });
+    applyDomTheme(data.settings?.theme || "system");
+  }, []);
+
+  // Debounced persistence on state change
   useEffect(() => {
-    const flush = () => {
-      if (stateRef.current) flushSave(stateRef.current);
-    };
-    window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') flush();
-    });
-    window.addEventListener('pagehide', flush);
+    if (!state.isLoaded) return;
+
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = setTimeout(() => {
+      flushStorage();
+    }, 150);
+
     return () => {
-      window.removeEventListener('visibilitychange', flush);
-      window.removeEventListener('pagehide', flush);
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
     };
-  }, []);
+  }, [state, flushStorage]);
+
+  // Flush on visibilitychange and pagehide
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushStorage();
+      }
+    };
+
+    const handlePageHide = () => {
+      flushStorage();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, [flushStorage]);
 
   // Cross-tab sync
   useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key !== STORAGE_KEY) return;
-      if (!e.newValue) return;
-      try {
-        const incoming = JSON.parse(e.newValue);
-        dispatch({ type: 'LOAD', data: incoming });
-      } catch {
-        // ignore corrupt cross-tab data
+    const handleStorageEvent = (e) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (validateData(parsed)) {
+            skipNextSaveRef.current = true;
+            dispatch({ type: "REPLACE_STATE", payload: parsed });
+            applyDomTheme(parsed.settings?.theme || "system");
+          }
+        } catch {}
       }
     };
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+
+    window.addEventListener("storage", handleStorageEvent);
+    return () => window.removeEventListener("storage", handleStorageEvent);
   }, []);
 
-  // ── Helper: find duplicate URL ──────────────────────────────────────────
-  const findDuplicate = useCallback((url, excludeBookmarkId = null) => {
-    if (!state) return null;
-    const normalized = normalizeForDupe(url);
-    for (const container of state.containers) {
-      for (const bookmark of container.bookmarks) {
-        if (bookmark.id === excludeBookmarkId) continue;
-        if (normalizeForDupe(bookmark.url) === normalized) {
-          return { bookmark, container };
-        }
-      }
-    }
-    return null;
-  }, [state]);
+  // Handle system theme listener
+  const currentTheme = state.settings?.theme || "system";
+  useEffect(() => {
+    applyDomTheme(currentTheme);
 
-  // ── ACTIONS ──────────────────────────────────────────────────────────────
-  const setTheme = useCallback((theme) => {
-    dispatch({ type: 'SET_THEME', theme });
+    if (currentTheme !== "system") return;
+
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => {
+      applyDomTheme("system");
+    };
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, [currentTheme]);
+
+  // Public action dispatchers
+  const addContainer = useCallback((title = "Container") => {
+    const newContainer = {
+      id: generateId(),
+      title,
+      collapsed: false,
+      bookmarks: [],
+    };
+    dispatch({ type: "SET_CONTAINERS", payload: [...stateRef.current.containers, newContainer] });
+    return newContainer;
   }, []);
 
-  const addContainer = useCallback((id, title) => {
-    dispatch({ type: 'ADD_CONTAINER', id, title });
+  const renameContainer = useCallback((id, title) => {
+    dispatch({ type: "RENAME_CONTAINER", payload: { id, title } });
   }, []);
 
-  const updateContainer = useCallback((id, updates) => {
-    dispatch({ type: 'UPDATE_CONTAINER', id, updates });
+  const toggleContainerCollapse = useCallback((id) => {
+    dispatch({ type: "TOGGLE_COLLAPSE", payload: { id } });
   }, []);
 
-  const deleteContainer = useCallback((id) => {
-    if (!state) return;
-    const idx = state.containers.findIndex(c => c.id === id);
-    const container = state.containers[idx];
-    dispatch({ type: 'DELETE_CONTAINER', id });
+  const deleteContainer = useCallback((containerId) => {
+    const currentList = stateRef.current.containers;
+    const index = currentList.findIndex((c) => c.id === containerId);
+    const container = currentList[index];
+    if (!container) return;
 
-    toast('Container deleted', {
+    dispatch({ type: "DELETE_CONTAINER", payload: { id: containerId } });
+
+    toast("Container deleted", {
       action: {
-        label: 'Undo',
+        label: "Undo",
         onClick: () => {
           dispatch({
-            type: 'SET_CONTAINERS',
-            containers: [
-              ...stateRef.current.containers.slice(0, idx),
-              container,
-              ...stateRef.current.containers.slice(idx),
-            ],
+            type: "RESTORE_CONTAINER",
+            payload: { container, index },
           });
         },
       },
     });
-  }, [state]);
-
-  const reorderContainers = useCallback((containers) => {
-    dispatch({ type: 'REORDER_CONTAINERS', containers });
   }, []);
 
-  const addBookmark = useCallback((containerId, bookmark) => {
-    dispatch({ type: 'ADD_BOOKMARK', containerId, bookmark });
+  const setContainers = useCallback((containers) => {
+    dispatch({ type: "SET_CONTAINERS", payload: containers });
   }, []);
 
-  const updateBookmark = useCallback((containerId, bookmarkId, updates) => {
-    dispatch({ type: 'UPDATE_BOOKMARK', containerId, bookmarkId, updates });
+  const addBookmark = useCallback((containerId, bookmarkData) => {
+    const newBookmark = {
+      id: generateId(),
+      url: bookmarkData.url,
+      title: bookmarkData.title,
+      description: bookmarkData.description || "",
+      createdAt: new Date().toISOString(),
+    };
+    dispatch({
+      type: "ADD_BOOKMARK",
+      payload: { containerId, bookmark: newBookmark },
+    });
+    return newBookmark;
   }, []);
 
-  const moveBookmark = useCallback((bookmarkId, fromContainerId, toContainerId, toIndex) => {
-    dispatch({ type: 'MOVE_BOOKMARK', bookmarkId, fromContainerId, toContainerId, toIndex });
+  const updateBookmark = useCallback((oldContainerId, newContainerId, bookmark) => {
+    dispatch({
+      type: "UPDATE_BOOKMARK",
+      payload: { oldContainerId, newContainerId, bookmark },
+    });
   }, []);
 
   const deleteBookmark = useCallback((containerId, bookmarkId) => {
-    if (!state) return;
-    const container = state.containers.find(c => c.id === containerId);
-    const idx = container?.bookmarks.findIndex(b => b.id === bookmarkId) ?? -1;
-    const bookmark = container?.bookmarks[idx];
-    dispatch({ type: 'DELETE_BOOKMARK', containerId, bookmarkId });
+    const container = stateRef.current.containers.find((c) => c.id === containerId);
+    if (!container) return;
+    const index = container.bookmarks.findIndex((b) => b.id === bookmarkId);
+    const bookmark = container.bookmarks[index];
+    if (!bookmark) return;
 
-    toast('Bookmark deleted', {
+    dispatch({
+      type: "DELETE_BOOKMARK",
+      payload: { containerId, bookmarkId },
+    });
+
+    toast("Bookmark deleted", {
       action: {
-        label: 'Undo',
+        label: "Undo",
         onClick: () => {
-          // Find the container (might have been recreated)
-          const currentState = stateRef.current;
-          const targetContainer = currentState.containers.find(c => c.id === containerId)
-            ?? currentState.containers[0];
-          if (!targetContainer) return;
-
-          const insertIdx = Math.min(idx, targetContainer.bookmarks.length);
-          const newBookmarks = [...targetContainer.bookmarks];
-          newBookmarks.splice(insertIdx, 0, bookmark);
-
           dispatch({
-            type: 'SET_CONTAINERS',
-            containers: currentState.containers.map(c =>
-              c.id === targetContainer.id ? { ...c, bookmarks: newBookmarks } : c
-            ),
+            type: "RESTORE_BOOKMARK",
+            payload: { bookmark, containerId, index },
           });
         },
       },
     });
-  }, [state]);
-
-  const setContainers = useCallback((containers) => {
-    dispatch({ type: 'SET_CONTAINERS', containers });
   }, []);
 
-  return {
-    state,
-    isLoaded: !!state,
-    findDuplicate,
-    setTheme,
+  const toggleTheme = useCallback(() => {
+    const isDarkNow = document.documentElement.classList.contains("dark");
+    const nextTheme = isDarkNow ? "light" : "dark";
+    dispatch({ type: "SET_THEME", payload: nextTheme });
+    applyDomTheme(nextTheme);
+  }, []);
+
+  const setTheme = useCallback((theme) => {
+    dispatch({ type: "SET_THEME", payload: theme });
+    applyDomTheme(theme);
+  }, []);
+
+  const setAppName = useCallback((appName) => {
+    dispatch({ type: "SET_APP_NAME", payload: appName });
+  }, []);
+
+  const setAppearance = useCallback((appearance) => {
+    dispatch({ type: "SET_APPEARANCE", payload: appearance });
+  }, []);
+
+  const setUseDividers = useCallback((useDividers) => {
+    dispatch({ type: "SET_USE_DIVIDERS", payload: useDividers });
+  }, []);
+
+  const toggleUseDividers = useCallback(() => {
+    dispatch({ type: "TOGGLE_USE_DIVIDERS" });
+  }, []);
+
+  const value = {
+    isLoaded: state.isLoaded,
+    version: state.version,
+    settings: state.settings,
+    appName: state.settings?.appName || APP_NAME,
+    appearance:
+      state.settings?.appearance === "extended"
+        ? "relaxed"
+        : state.settings?.appearance || "relaxed",
+    useDividers: Boolean(state.settings?.useDividers),
+    containers: state.containers,
     addContainer,
-    updateContainer,
+    renameContainer,
+    toggleContainerCollapse,
     deleteContainer,
-    reorderContainers,
+    setContainers,
     addBookmark,
     updateBookmark,
-    moveBookmark,
     deleteBookmark,
-    setContainers,
-    dispatch,
+    toggleTheme,
+    setTheme,
+    setAppName,
+    setAppearance,
+    setUseDividers,
+    toggleUseDividers,
+    rawState: state,
   };
+
+  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+}
+
+export function useStore() {
+  const context = useContext(StoreContext);
+  if (!context) {
+    throw new Error("useStore must be used within a StoreProvider");
+  }
+  return context;
 }
